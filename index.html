@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Road to Sub-25</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#1b1b2f; --panel:#26264a; --ink:#f4f4f4; --dim:#9aa0c3; --gold:#ffd166; --strava:#fc4c02; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:'Press Start 2P', monospace; font-size:12px; line-height:1.7; }
+  main { max-width:1000px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:22px; text-align:center; color:var(--gold); text-shadow:3px 3px 0 #000; margin:8px 0 4px; }
+  .sub { text-align:center; color:var(--dim); font-size:10px; margin-bottom:20px; }
+  canvas { width:100%; image-rendering:pixelated; border:4px solid #000; box-shadow:6px 6px 0 #000; display:block; background:#000; }
+  .row { display:grid; grid-template-columns:1.4fr 1fr; gap:20px; margin-top:24px; }
+  @media (max-width:760px){ .row { grid-template-columns:1fr; } h1{font-size:16px;} }
+  .panel { background:var(--panel); border:4px solid #000; box-shadow:6px 6px 0 #000; padding:16px; }
+  .panel h2 { font-size:12px; color:var(--gold); margin:0 0 12px; }
+  table { width:100%; border-collapse:collapse; font-size:10px; }
+  td, th { padding:6px 4px; text-align:left; }
+  th { color:var(--dim); font-weight:normal; }
+  tr.lead td { color:var(--gold); }
+  .chip { display:inline-block; width:10px; height:10px; border:2px solid #000; vertical-align:middle; margin-right:6px; }
+  .btn { display:inline-block; font-family:inherit; font-size:11px; color:#fff; background:var(--strava); border:3px solid #000; box-shadow:4px 4px 0 #000; padding:12px 14px; cursor:pointer; text-decoration:none; }
+  .btn:active { transform:translate(2px,2px); box-shadow:2px 2px 0 #000; }
+  label { display:flex; justify-content:space-between; align-items:center; margin:10px 0; font-size:10px; }
+  input[type=text] { font-family:inherit; font-size:10px; width:55%; padding:6px; border:3px solid #000; }
+  input[type=color] { width:44px; height:28px; border:3px solid #000; padding:0; background:none; }
+  .note { color:var(--dim); font-size:9px; margin-top:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ROAD TO SUB-25</h1>
+  <div class="sub">FASTEST 5K LEADS &middot; FINISH LINE = 25:00</div>
+  <canvas id="track" width="960" height="300"></canvas>
+  <div class="row">
+    <div class="panel">
+      <h2>LEADERBOARD</h2>
+      <table><thead><tr><th>#</th><th>RUNNER</th><th>BEST 5K</th><th>TO GO</th></tr></thead><tbody id="board"></tbody></table>
+    </div>
+    <div class="panel" id="side"></div>
+  </div>
+</main>
+<script>
+const START = 40 * 60, GOAL = 25 * 60;
+const DEMO = [
+  { id: 1, name: 'SHANE', best: 1890, look: { shirt: '#e63946', shorts: '#1d3557', hair: '#3b2a1a', skin: '#f1c27d' } },
+  { id: 2, name: 'DAVE',  best: 1755, look: { shirt: '#2a9d8f', shorts: '#264653', hair: '#111111', skin: '#e0ac69' } },
+  { id: 3, name: 'CIARA', best: 2010, look: { shirt: '#f4a261', shorts: '#6d597a', hair: '#b5651d', skin: '#ffdbac' } }
+];
+let runners = [], meId = null, demo = false;
+
+const FRAMES = [
+ ['...HHHH...','..HHHHHH..','..HSSSSH..','...SSSS...','...SSSS...','..TTTTTT..','.STTTTTTS.','.STTTTTT..','...TTTT...','...PPPP...','..PP..PP..','..SS...SS.','.SS.....S.','.KK.....KK'],
+ ['...HHHH...','..HHHHHH..','..HSSSSH..','...SSSS...','...SSSS...','..TTTTTT..','..TTTTTTS.','.STTTTTT..','...TTTT...','...PPPP...','...PP.PP..','...SS.SS..','...SS.SS..','...KK.KK..']
+];
+const fmt = s => s ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : '--:--';
+const pct = s => s ? Math.max(0, Math.min(1, (START - s) / (START - GOAL))) : 0;
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+async function load() {
+  try {
+    const r = await fetch('/api/runners');
+    if (!r.ok) throw 0;
+    const j = await r.json();
+    runners = j.runners; meId = j.me; demo = false;
+  } catch (e) { runners = DEMO; demo = true; }
+  runners.sort((a, b) => (a.best || 1e9) - (b.best || 1e9));
+  drawBoard(); drawSide();
+}
+
+function drawBoard() {
+  document.getElementById('board').innerHTML = runners.map((r, i) =>
+    `<tr class="${i === 0 && r.best ? 'lead' : ''}"><td>${i + 1}</td><td><span class="chip" style="background:${r.look.shirt}"></span>${esc(r.name)}</td><td>${fmt(r.best)}</td><td>${!r.best ? '?' : r.best < GOAL ? 'DONE!' : '-' + fmt(r.best - GOAL)}</td></tr>`
+  ).join('') || '<tr><td colspan="4">NO RUNNERS YET</td></tr>';
+}
+
+function drawSide() {
+  const side = document.getElementById('side');
+  const me = runners.find(r => r.id === meId);
+  if (demo) {
+    side.innerHTML = `<h2>DEMO MODE</h2><p style="font-size:10px">These are made-up runners. Once the site is live, friends join with Strava.</p>`;
+  } else if (!me) {
+    side.innerHTML = `<h2>JOIN THE RACE</h2><p style="font-size:10px">Connect Strava and your best 5K from recent runs puts you on the track. New runs update it automatically.</p><a class="btn" href="/api/login">CONNECT WITH STRAVA</a>`;
+  } else {
+    const L = me.look;
+    side.innerHTML = `<h2>YOUR RUNNER</h2>
+      <label>NAME <input type="text" id="n" maxlength="10" value="${esc(me.name)}"></label>
+      <label>SHIRT <input type="color" id="shirt" value="${L.shirt}"></label>
+      <label>SHORTS <input type="color" id="shorts" value="${L.shorts}"></label>
+      <label>HAIR <input type="color" id="hair" value="${L.hair}"></label>
+      <label>SKIN <input type="color" id="skin" value="${L.skin}"></label>
+      <button class="btn" id="save">SAVE</button>
+      <p class="note">Best 5K: ${fmt(me.best)}. Upload a run to Strava and the track updates on its own.</p>`;
+    ['shirt', 'shorts', 'hair', 'skin'].forEach(k => document.getElementById(k).oninput = e => { me.look[k] = e.target.value; });
+    document.getElementById('save').onclick = async () => {
+      const body = { name: document.getElementById('n').value };
+      ['shirt', 'shorts', 'hair', 'skin'].forEach(k => body[k] = me.look[k]);
+      await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      load();
+    };
+  }
+}
+
+const cv = document.getElementById('track'), g = cv.getContext('2d');
+g.imageSmoothingEnabled = false;
+const X0 = 90, X1 = 880;
+
+function sprite(look, x, y, f, scale) {
+  const map = { H: look.hair, S: look.skin, T: look.shirt, P: look.shorts, K: '#111' };
+  FRAMES[f].forEach((row, j) => [...row].forEach((c, i) => {
+    if (map[c]) { g.fillStyle = map[c]; g.fillRect(x + i * scale, y + j * scale, scale, scale); }
+  }));
+}
+
+function frame(t) {
+  const n = Math.max(runners.length, 3), lane = 44, top = 60;
+  cv.height = top + n * lane + 30;
+  g.fillStyle = '#5ec8f2'; g.fillRect(0, 0, 960, top);
+  g.fillStyle = '#fff';
+  [[120, 18], [430, 30], [760, 14]].forEach(([cx, cy]) => {
+    const x = (cx + t / 60) % 1040 - 80;
+    g.fillRect(x, cy, 48, 12); g.fillRect(x + 12, cy - 8, 24, 8);
+  });
+  g.fillStyle = '#3fa34d'; g.fillRect(0, top - 12, 960, 12);
+  g.fillRect(0, cv.height - 30, 960, 30);
+  g.fillStyle = '#c1502e'; g.fillRect(0, top, 960, n * lane);
+  g.fillStyle = 'rgba(255,255,255,.7)';
+  for (let i = 0; i <= n; i++) g.fillRect(0, top + i * lane - 1, 960, 2);
+  g.fillStyle = '#fff'; g.fillRect(X0, top, 4, n * lane);
+  for (let y = 0; y < n * lane; y += 8) for (let k = 0; k < 2; k++) {
+    g.fillStyle = ((y / 8 + k) % 2) ? '#000' : '#fff';
+    g.fillRect(X1 + 30 + k * 8, top + y, 8, 8);
+  }
+  g.font = '8px "Press Start 2P"'; g.textAlign = 'center';
+  g.fillStyle = '#fff'; g.fillText('40:00', X0, top - 18); g.fillText('25:00', X1 + 38, top - 18);
+  runners.forEach((r, i) => {
+    const x = X0 + pct(r.best) * (X1 - X0) - 15, y = top + i * lane + 4;
+    const f = Math.floor(t / 180 + i) % 2, bob = f ? 0 : -2;
+    sprite(r.look, x, y + bob, f, 3);
+    g.fillStyle = r.id === meId ? '#ffd166' : '#fff';
+    g.textAlign = 'left'; g.fillText(r.name, Math.min(x + 36, 800), y + 26);
+  });
+  requestAnimationFrame(frame);
+}
+
+load();
+setInterval(load, 60000);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
