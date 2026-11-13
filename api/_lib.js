@@ -29,6 +29,7 @@ async function api(r, path) {
 async function checkActivity(r, id) {
   const a = await api(r, '/activities/' + id);
   if (!/Run/.test(a.sport_type || a.type || '')) return;
+  if (r.joined && new Date(a.start_date).getTime() < r.joined) return;
   const e = (a.best_efforts || []).find(b => b.name === '5k');
   if (e && (!r.best || e.elapsed_time < r.best)) { r.best = e.elapsed_time; await putRunner(r); }
 }
