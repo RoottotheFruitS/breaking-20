@@ -51,7 +51,8 @@ const DEMO = [
   { id: 2, name: 'DAVE',  best: 1755, look: { shirt: '#2a9d8f', shorts: '#264653', hair: '#111111', skin: '#e0ac69' } },
   { id: 3, name: 'CIARA', best: 2010, look: { shirt: '#f4a261', shorts: '#6d597a', hair: '#b5651d', skin: '#ffdbac' } }
 ];
-let runners = [], meId = null, demo = false;
+let runners = [], meId = null, demo = false, draft = null;
+const mine = () => runners.find(r => r.id === meId);
 
 const FRAMES = [
  ['...HHHH...','..HHHHHH..','..HSSSSH..','...SSSS...','...SSSS...','..TTTTTT..','.STTTTTTS.','.STTTTTT..','...TTTT...','...PPPP...','..PP..PP..','..SS...SS.','.SS.....S.','.KK.....KK'],
@@ -69,6 +70,7 @@ async function load() {
     runners = j.runners; meId = j.me; demo = false;
   } catch (e) { runners = DEMO; demo = true; }
   runners.sort((a, b) => (a.best || 1e9) - (b.best || 1e9));
+  if (draft && mine()) Object.assign(mine().look, draft);
   drawBoard(); drawSide();
 }
 
@@ -80,12 +82,13 @@ function drawBoard() {
 
 function drawSide() {
   const side = document.getElementById('side');
-  const me = runners.find(r => r.id === meId);
+  const me = mine();
   if (demo) {
     side.innerHTML = `<h2>DEMO MODE</h2><p style="font-size:10px">These are made-up runners. Once the site is live, friends join with Strava.</p>`;
   } else if (!me) {
     side.innerHTML = `<h2>JOIN THE RACE</h2><p style="font-size:10px">Connect Strava to join. Only runs you log from today count: your fastest 5K moves you up the track automatically.</p><a class="btn" href="/api/login">CONNECT WITH STRAVA</a>`;
   } else {
+    if (document.getElementById('save')) { document.getElementById('best').textContent = fmt(me.best); return; }
     const L = me.look;
     side.innerHTML = `<h2>YOUR RUNNER</h2>
       <label>NAME <input type="text" id="n" maxlength="10" value="${esc(me.name)}"></label>
@@ -93,14 +96,26 @@ function drawSide() {
       <label>SHORTS <input type="color" id="shorts" value="${L.shorts}"></label>
       <label>HAIR <input type="color" id="hair" value="${L.hair}"></label>
       <label>SKIN <input type="color" id="skin" value="${L.skin}"></label>
-      <button class="btn" id="save">SAVE</button>
-      <p class="note">Best 5K since joining: ${fmt(me.best)}. Log a run on Strava and the track updates on its own.</p>`;
-    ['shirt', 'shorts', 'hair', 'skin'].forEach(k => document.getElementById(k).oninput = e => { me.look[k] = e.target.value; });
+      <button class="btn" id="save">SAVE</button><span id="ok" style="display:none;color:var(--gold)">&#128077; SAVED</span>
+      <p class="note">Best 5K since joining: <span id="best">${fmt(me.best)}</span>. Log a run on Strava and the track updates on its own.</p>`;
+    const saved = yes => {
+      document.getElementById('save').style.display = yes ? 'none' : '';
+      document.getElementById('ok').style.display = yes ? '' : 'none';
+    };
+    document.getElementById('n').oninput = () => saved(false);
+    ['shirt', 'shorts', 'hair', 'skin'].forEach(k => document.getElementById(k).oninput = e => {
+      draft = draft || {}; draft[k] = e.target.value;
+      if (mine()) mine().look[k] = e.target.value;
+      saved(false);
+    });
     document.getElementById('save').onclick = async () => {
-      const body = { name: document.getElementById('n').value };
-      ['shirt', 'shorts', 'hair', 'skin'].forEach(k => body[k] = me.look[k]);
-      await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      load();
+      const btn = document.getElementById('save'), m = mine();
+      const body = { name: document.getElementById('n').value, ...m.look };
+      btn.textContent = 'SAVING...';
+      let ok = false;
+      try { ok = (await fetch('/api/profile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).ok; } catch (e) {}
+      if (ok) { draft = null; await load(); document.getElementById('n').value = mine().name; btn.textContent = 'SAVE'; saved(true); }
+      else { btn.textContent = 'FAILED - TRY AGAIN'; setTimeout(() => { btn.textContent = 'SAVE'; }, 2000); }
     };
   }
 }
